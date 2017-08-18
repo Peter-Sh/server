@@ -326,6 +326,38 @@ typedef enum monotonicity_info
 
 class sp_rcontext;
 
+class Sp_rcontext_handler
+{
+public:
+  virtual const LEX_CSTRING *get_name_prefix() const= 0;
+  virtual sp_rcontext *get_rcontext(sp_rcontext *ctx) const= 0;
+};
+
+
+class Sp_rcontext_handler_local: public Sp_rcontext_handler
+{
+public:
+  const LEX_CSTRING *get_name_prefix() const;
+  sp_rcontext *get_rcontext(sp_rcontext *ctx) const;
+};
+
+
+class Sp_rcontext_handler_package_body: public Sp_rcontext_handler
+{
+public:
+  const LEX_CSTRING *get_name_prefix() const;
+  sp_rcontext *get_rcontext(sp_rcontext *ctx) const;
+};
+
+
+extern MYSQL_PLUGIN_IMPORT
+  Sp_rcontext_handler_local sp_rcontext_handler_local;
+
+
+extern MYSQL_PLUGIN_IMPORT
+  Sp_rcontext_handler_package_body sp_rcontext_handler_package_body;
+
+
 
 class Item_equal;
 
@@ -2284,13 +2316,20 @@ class Item_splocal :public Item_sp_variable,
                     public Type_handler_hybrid_field_type
 {
 protected:
+  const Sp_rcontext_handler *m_rcontext_handler;
+
   uint m_var_idx;
 
   Type m_type;
 
   bool append_value_for_log(THD *thd, String *str);
+
+  sp_rcontext *get_rcontext(sp_rcontext *local_ctx) const;
+  Item *get_item(sp_rcontext *ctx) const;
+
 public:
-  Item_splocal(THD *thd, const LEX_CSTRING *sp_var_name, uint sp_var_idx,
+  Item_splocal(THD *thd, const Sp_rcontext_handler *handler,
+               const LEX_CSTRING *sp_var_name, uint sp_var_idx,
                enum_field_types sp_var_type,
                uint pos_in_q= 0, uint len_in_q= 0);
 
@@ -2347,9 +2386,11 @@ public:
 class Item_splocal_row: public Item_splocal
 {
 public:
-  Item_splocal_row(THD *thd, const LEX_CSTRING *sp_var_name,
+  Item_splocal_row(THD *thd,
+                   const Sp_rcontext_handler *handler,
+                   const LEX_CSTRING *sp_var_name,
                    uint sp_var_idx, uint pos_in_q, uint len_in_q)
-   :Item_splocal(thd, sp_var_name, sp_var_idx, MYSQL_TYPE_NULL,
+   :Item_splocal(thd, handler, sp_var_name, sp_var_idx, MYSQL_TYPE_NULL,
                  pos_in_q, len_in_q)
   {
     set_handler(&type_handler_row);
@@ -2366,10 +2407,11 @@ class Item_splocal_with_delayed_data_type: public Item_splocal
 {
 public:
   Item_splocal_with_delayed_data_type(THD *thd,
+                                      const Sp_rcontext_handler *handler,
                                       const LEX_CSTRING *sp_var_name,
                                       uint sp_var_idx,
                                       uint pos_in_q, uint len_in_q)
-   :Item_splocal(thd, sp_var_name, sp_var_idx, MYSQL_TYPE_NULL,
+   :Item_splocal(thd, handler, sp_var_name, sp_var_idx, MYSQL_TYPE_NULL,
                  pos_in_q, len_in_q)
   { }
 };
@@ -2388,12 +2430,13 @@ protected:
   bool set_value(THD *thd, sp_rcontext *ctx, Item **it);
 public:
   Item_splocal_row_field(THD *thd,
+                         const Sp_rcontext_handler *handler,
                          const LEX_CSTRING *sp_var_name,
                          const LEX_CSTRING *sp_field_name,
                          uint sp_var_idx, uint sp_field_idx,
                          enum_field_types sp_var_type,
                          uint pos_in_q= 0, uint len_in_q= 0)
-   :Item_splocal(thd, sp_var_name, sp_var_idx, sp_var_type,
+   :Item_splocal(thd, handler, sp_var_name, sp_var_idx, sp_var_type,
                  pos_in_q, len_in_q),
     m_field_name(*sp_field_name),
     m_field_idx(sp_field_idx)
@@ -2412,12 +2455,13 @@ class Item_splocal_row_field_by_name :public Item_splocal_row_field
   bool set_value(THD *thd, sp_rcontext *ctx, Item **it);
 public:
   Item_splocal_row_field_by_name(THD *thd,
+                                 const Sp_rcontext_handler *handler,
                                  const LEX_CSTRING *sp_var_name,
                                  const LEX_CSTRING *sp_field_name,
                                  uint sp_var_idx,
                                  enum_field_types sp_var_type,
                                  uint pos_in_q= 0, uint len_in_q= 0)
-   :Item_splocal_row_field(thd, sp_var_name, sp_field_name,
+   :Item_splocal_row_field(thd, handler, sp_var_name, sp_field_name,
                            sp_var_idx, 0 /* field index will be set later */,
                            sp_var_type, pos_in_q, len_in_q)
   { }

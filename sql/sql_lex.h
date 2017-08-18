@@ -2302,6 +2302,19 @@ public:
     return m_cpp_ptr;
   }
 
+  /**
+    Get the current stream pointer, in the pre-processed buffer,
+    with traling spaces removed.
+  */
+  const char *get_cpp_ptr_rtrim()
+  {
+    const char *p;
+    for (p= m_cpp_ptr;
+         p > m_cpp_buf && my_isspace(system_charset_info, p[-1]);
+         p--)
+    { }
+    return p;
+  }
   /** Get the utf8-body string. */
   const char *get_body_utf8_str()
   {
@@ -3159,15 +3172,10 @@ public:
   sp_name *make_sp_name(THD *thd, const LEX_CSTRING *name);
   sp_name *make_sp_name(THD *thd, const LEX_CSTRING *name1,
                                   const LEX_CSTRING *name2);
+  sp_name *make_sp_name_package_routine(THD *thd, const LEX_CSTRING *name);
   sp_head *make_sp_head(THD *thd, const sp_name *name, const Sp_handler *sph);
   sp_head *make_sp_head_no_recursive(THD *thd, const sp_name *name,
-                                     const Sp_handler *sph)
-  {
-    if (!sphead)
-      return make_sp_head(thd, name, sph);
-    my_error(ER_SP_NO_RECURSIVE_CREATE, MYF(0), sph->type_str());
-    return NULL;
-  }
+                                     const Sp_handler *sph);
   sp_head *make_sp_head_no_recursive(THD *thd,
                                      DDL_options_st options, sp_name *name,
                                      const Sp_handler *sph)
@@ -3178,10 +3186,29 @@ public:
   }
   bool sp_body_finalize_function(THD *);
   bool sp_body_finalize_procedure(THD *);
+  sp_package *create_package_start(THD *thd,
+                                   enum_sql_command command,
+                                   const Sp_handler *sph,
+                                   const sp_name *name,
+                                   DDL_options_st options);
+  bool create_package_finalize(THD *thd,
+                               const sp_name *name,
+                               const sp_name *name2,
+                               const char *body_start,
+                               const char *body_end);
   bool call_statement_start(THD *thd, sp_name *name);
   bool call_statement_start(THD *thd, const LEX_CSTRING *name);
   bool call_statement_start(THD *thd, const LEX_CSTRING *name1,
                                       const LEX_CSTRING *name2);
+  sp_variable *find_variable(const LEX_CSTRING *name,
+                             sp_pcontext **ctx,
+                             const Sp_rcontext_handler **handler) const;
+  sp_variable *find_variable(const LEX_CSTRING *name,
+                             const Sp_rcontext_handler **handler) const
+  {
+    sp_pcontext *not_used_ctx;
+    return find_variable(name, &not_used_ctx, handler);
+  }
   bool init_internal_variable(struct sys_var_with_base *variable,
                              const LEX_CSTRING *name);
   bool init_internal_variable(struct sys_var_with_base *variable,
@@ -3271,6 +3298,7 @@ public:
       @length_in_q      - length in the query (for binary log)
   */
   Item_splocal *create_item_spvar_row_field(THD *thd,
+                                            const Sp_rcontext_handler *handler,
                                             const LEX_CSTRING *var,
                                             const LEX_CSTRING *field,
                                             sp_variable *spvar,
@@ -3360,6 +3388,7 @@ public:
                           uint pos_in_q, uint length_in_q);
 
   Item *make_item_func_replace(THD *thd, Item *org, Item *find, Item *replace);
+  my_var *create_outvar(THD *thd, const LEX_CSTRING *name);
 
   /*
     Create a my_var instance for a ROW field variable that was used
@@ -3421,6 +3450,7 @@ public:
   bool sp_block_with_exceptions_finalize_exceptions(THD *thd,
                                                   uint executable_section_ip,
                                                   uint exception_count);
+  bool sp_block_with_exceptions_add_empty(THD *thd);
   bool sp_exit_statement(THD *thd, Item *when);
   bool sp_exit_statement(THD *thd, const LEX_CSTRING *label_name, Item *item);
   bool sp_leave_statement(THD *thd, const LEX_CSTRING *label_name);
@@ -3665,6 +3695,7 @@ public:
 
   bool add_grant_command(THD *thd, enum_sql_command sql_command_arg,
                          stored_procedure_type type_arg);
+  sp_package *get_sp_package() const;
 };
 
 

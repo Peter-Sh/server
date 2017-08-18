@@ -69,6 +69,7 @@ public:
   ///
   /// @return valid sp_rcontext object or NULL in case of OOM-error.
   static sp_rcontext *create(THD *thd,
+                             const sp_head *owner,
                              const sp_pcontext *root_parsing_ctx,
                              Field *return_value_fld,
                              bool resolve_type_refs);
@@ -76,7 +77,8 @@ public:
   ~sp_rcontext();
 
 private:
-  sp_rcontext(const sp_pcontext *root_parsing_ctx,
+  sp_rcontext(const sp_head *owner,
+              const sp_pcontext *root_parsing_ctx,
               Field *return_value_fld,
               bool in_sub_stmt);
 
@@ -176,11 +178,10 @@ public:
   /// of the client/server protocol.
   bool end_partial_result_set;
 
-#ifndef DBUG_OFF
   /// The stored program for which this runtime context is created. Used for
-  /// checking if correct runtime context is used for variable handling.
-  sp_head *sp;
-#endif
+  /// checking if correct runtime context is used for variable handling,
+  /// and to access the package run-time context
+  const sp_head *m_sp;
 
   /////////////////////////////////////////////////////////////////////////
   // SP-variables.

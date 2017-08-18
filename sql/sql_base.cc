@@ -3046,6 +3046,46 @@ thr_lock_type read_lock_type_for_table(THD *thd,
 
 
 /*
+  Extend the prelocking set with tables and routines used by a routine.
+
+  @param[in]  thd                   Thread context.
+  @param[in]  rt                    Element of prelocking set to be processed.
+  @param[in]  ot_ctx                Context of open_table used to recover from
+                                    locking failures.
+  @retval false  Success.
+  @retval true   Failure (Conflicting metadata lock, OOM, other errors).
+*/
+static bool
+sp_acquire_mdl(THD *thd, Sroutine_hash_entry *rt, Open_table_context *ot_ctx)
+{
+  DBUG_ENTER("sp_acquire_mdl");
+  /*
+    Since we acquire only shared lock on routines we don't
+    need to care about global intention exclusive locks.
+  */
+  DBUG_ASSERT(rt->mdl_request.type == MDL_SHARED);
+
+  /*
+    Waiting for a conflicting metadata lock to go away may
+    lead to a deadlock, detected by MDL subsystem.
+    If possible, we try to resolve such deadlocks by releasing all
+    metadata locks and restarting the pre-locking process.
+    To prevent the error from polluting the diagnostics area
+    in case of successful resolution, install a special error
+    handler for ER_LOCK_DEADLOCK error.
+  */
+  MDL_deadlock_handler mdl_deadlock_handler(ot_ctx);
+
+  thd->push_internal_handler(&mdl_deadlock_handler);
+  bool result= thd->mdl_context.acquire_lock(&rt->mdl_request,
+                                             ot_ctx->get_timeout());
+  thd->pop_internal_handler();
+
+  DBUG_RETURN(result);
+}
+
+
+/*
   Handle element of prelocking set other than table. E.g. cache routine
   and, if prelocking strategy prescribes so, extend the prelocking set
   with tables and routines used by it.
@@ -3085,6 +3125,17 @@ open_and_process_routine(THD *thd, Query_tables_list *prelocking_ctx,
 
   switch (mdl_type)
   {
+  case MDL_key::PACKAGE_BODY:
+    DBUG_ASSERT(rt != (Sroutine_hash_entry*)prelocking_ctx->sroutines_list.first);
+    /*
+      No need to cache the package body itself.
+      It gets cached during open_and_process_routine()
+      for the first used package routine. See the package related code
+      in the "case" below.
+    */
+    if (sp_acquire_mdl(thd, rt, ot_ctx))
+      DBUG_RETURN(TRUE);
+    break;
   case MDL_key::FUNCTION:
   case MDL_key::PROCEDURE:
     {
@@ -3100,31 +3151,11 @@ open_and_process_routine(THD *thd, Query_tables_list *prelocking_ctx,
           mdl_type != MDL_key::PROCEDURE)
       {
         /*
-          Since we acquire only shared lock on routines we don't
-          need to care about global intention exclusive locks.
+          TODO: If this is a package routine, we should not put MDL
+          TODO: on the routine itself. We should put only the package MDL.
         */
-        DBUG_ASSERT(rt->mdl_request.type == MDL_SHARED);
-
-        /*
-          Waiting for a conflicting metadata lock to go away may
-          lead to a deadlock, detected by MDL subsystem.
-          If possible, we try to resolve such deadlocks by releasing all
-          metadata locks and restarting the pre-locking process.
-          To prevent the error from polluting the diagnostics area
-          in case of successful resolution, install a special error
-          handler for ER_LOCK_DEADLOCK error.
-        */
-        MDL_deadlock_handler mdl_deadlock_handler(ot_ctx);
-
-        thd->push_internal_handler(&mdl_deadlock_handler);
-        bool result= thd->mdl_context.acquire_lock(&rt->mdl_request,
-                                                   ot_ctx->get_timeout());
-        thd->pop_internal_handler();
-
-        if (result)
+        if (sp_acquire_mdl(thd, rt, ot_ctx))
           DBUG_RETURN(TRUE);
-
-        DEBUG_SYNC(thd, "after_shared_lock_pname");
 
         /* Ensures the routine is up-to-date and cached, if exists. */
         if (rt->sp_cache_routine(thd, has_prelocking_list, &sp))
@@ -3140,8 +3171,24 @@ open_and_process_routine(THD *thd, Query_tables_list *prelocking_ctx,
           *routine_modifies_data= sp->modifies_data();
 
           if (!has_prelocking_list)
+          {
             prelocking_strategy->handle_routine(thd, prelocking_ctx, rt, sp,
                                                 need_prelocking);
+            if (sp->m_parent)
+            {
+              /*
+                If it's a package routine, we need also to handle the
+                package body, as its initialization section can use
+                some tables and routine calls.
+                TODO: Only package public routines actually need this.
+                TODO: Skip package body handling for private routines.
+              */
+              *routine_modifies_data|= sp->m_parent->modifies_data();
+              prelocking_strategy->handle_routine(thd, prelocking_ctx, rt,
+                                                  sp->m_parent,
+                                                  need_prelocking);
+            }
+          }
         }
       }
       else
