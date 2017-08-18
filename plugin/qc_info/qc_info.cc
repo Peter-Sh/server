@@ -217,7 +217,7 @@ static int qc_info_fill_table(THD *thd, TABLE_LIST *tables,
     table->field[COLUMN_IN_TRANS]->store(flags.in_trans, 0);
     table->field[COLUMN_AUTOCOMMIT]->store(flags.autocommit, 0);
     table->field[COLUMN_PKT_NR]->store(flags.pkt_nr, 0);
-    table->field[COLUMN_HIT_COUNT]->store(query_cache_query.get_hit_count(), 0);
+    table->field[COLUMN_HIT_COUNT]->store(query_cache_query->get_hit_count(), 0);
 
     /* The database against which the statement is executed is part of the
        query cache query key
