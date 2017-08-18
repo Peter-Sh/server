@@ -2114,6 +2114,7 @@ lookup:
   }
   move_to_query_list_end(query_block);
   hits++;
+  query->increment_hit_count();
   unlock();
 
   /*

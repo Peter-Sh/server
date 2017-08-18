@@ -76,6 +76,7 @@ bool schema_table_store_record(THD *thd, TABLE *table);
 #define COLUMN_IN_TRANS 20
 #define COLUMN_AUTOCOMMIT 21
 #define COLUMN_PKT_NR 22
+#define COLUMN_HIT_COUNT 23
 
 /* ST_FIELD_INFO is defined in table.h */
 static ST_FIELD_INFO qc_info_fields[]=
@@ -103,6 +104,7 @@ static ST_FIELD_INFO qc_info_fields[]=
   {"IN_TRANS", MY_INT32_NUM_DECIMAL_DIGITS, MYSQL_TYPE_TINY, 0, 0, 0, 0},
   {"AUTOCOMMIT", MY_INT32_NUM_DECIMAL_DIGITS, MYSQL_TYPE_TINY, 0, 0, 0, 0},
   {"PACKET_NUMBER", MY_INT32_NUM_DECIMAL_DIGITS, MYSQL_TYPE_TINY, 0, 0, 0, 0},
+  {"HIT_COUNT", MY_INT32_NUM_DECIMAL_DIGITS, MYSQL_TYPE_LONG, 0, 0, 0, 0},
   {0, 0, MYSQL_TYPE_STRING, 0, 0, 0, 0}
 };
 
@@ -215,6 +217,7 @@ static int qc_info_fill_table(THD *thd, TABLE_LIST *tables,
     table->field[COLUMN_IN_TRANS]->store(flags.in_trans, 0);
     table->field[COLUMN_AUTOCOMMIT]->store(flags.autocommit, 0);
     table->field[COLUMN_PKT_NR]->store(flags.pkt_nr, 0);
+    table->field[COLUMN_HIT_COUNT]->store(query_cache_query.get_hit_count(), 0);
 
     /* The database against which the statement is executed is part of the
        query cache query key
